@@ -1,12 +1,35 @@
-import telepot, pylast, os
+import telepot, pylast, os, random, csv
 import numpy as np
 from pprint import pprint
+from apiclient.discovery import build
+from apiclient.errors import HttpError
+from oauth2client.tools import argparser
+
+# Load Pokedex
+pd_national_dex = {}
+pd_names = {}
+initial = True
+
+with open ('pokedex.csv', 'r') as f:
+    for line in csv.reader(f):
+        # skip header line
+        if initial:
+            initial = False
+            continue
+
+        pd_national_dex[line[1]] = line[3]
+        pd_names[line[2].lower()] = line[3]
+
+# API keys, etc.
 bot = telepot.Bot(os.environ.get('TELEGRAM_API_TOKEN'))
+LASTFM_API_KEY = os.environ.get('LASTFM_API_KEY')
+LASTFM_API_SECRET = os.environ.get('LASTFM_API_SECRET')
+GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY')
+YOUTUBE_API_SERVICE_NAME = "youtube"
+YOUTUBE_API_VERSION = "v3"
 
-API_KEY = os.environ.get('LASTFM_API_KEY')
-API_SECRET = os.environ.get('LASTFM_API_SECRET')
-
-network = pylast.LastFMNetwork(api_key=API_KEY, api_secret=API_SECRET)
+network = pylast.LastFMNetwork(api_key=LASTFM_API_KEY, api_secret=LASTFM_API_SECRET)
+youtube = build(YOUTUBE_API_SERVICE_NAME, YOUTUBE_API_VERSION, developerKey=GOOGLE_API_KEY)
 
 if os.path.exists('lastfm_handles.npy'):
     lastfm_handles = np.load('lastfm_handles.npy').item()
@@ -16,6 +39,78 @@ else:
 def handle(msg):
     import numpy as np
     pprint(msg)
+
+    if msg['text'].startswith('/pokedex'):
+        try:
+            query = msg['text'].split()[1].strip()
+        except IndexError:
+            to_send = 'You must specify a query.'
+        else:
+            try:
+                national_dex = int(query)
+                name = None
+            except ValueError:
+                national_dex = None
+                name = query.lower()
+
+            try:
+                if national_dex is not None:
+                    to_send = pd_national_dex[str(national_dex)]
+                else:
+                    to_send = pd_names[name]
+            except KeyError:
+                to_send = 'Couldn\'t find ' + query + '.'
+
+        # Send the response
+        bot.sendMessage(msg['chat']['id'], to_send)
+        print('>>>' + to_send)
+
+    if msg['text'].startswith('/toss'):
+        if random.randint(1, 2) == 1:
+            to_send = 'Heads.'
+        else:
+            to_send = 'Tails.'
+
+        # Send the response
+        bot.sendMessage(msg['chat']['id'], to_send)
+        print('>>>' + to_send)
+
+    if msg['text'].startswith('/roll'):
+        to_send = 'Rolled a %d.' % random.randint(1, 6)
+
+        # Send the response
+        bot.sendMessage(msg['chat']['id'], to_send)
+        print('>>>' + to_send)
+
+    if msg['text'].startswith('/eval'):
+        try:
+            msg['text'].split()[1]
+            query = ' '.join(msg['text'].split()[1:])
+            to_send = query.strip() + ' = ' + str(eval(query, {}, {}))
+        except IndexError:
+            to_send = 'You must specify a query.'
+        except:
+            to_send = 'Invalid expression.'
+
+        # Send the response
+        bot.sendMessage(msg['chat']['id'], to_send)
+        print('>>>' + to_send)
+
+    if msg['text'].startswith('/youtube'):
+        try:
+            msg['text'].split()[1]
+            query = ' '.join(msg['text'].split()[1:])
+            search_response = youtube.search().list(q=query, type="video", part="id,snippet", maxResults=1).execute()
+
+            for search_result in search_response.get("items", []):
+                pprint(search_result)
+                to_send = "%s\nhttps://youtube.com/watch?v=%s" % (search_result["snippet"]["title"], search_result["id"]["videoId"])
+        except IndexError:
+            to_send = 'You must specify a query.'
+
+        # Send the response
+        bot.sendMessage(msg['chat']['id'], to_send)
+        print('>>>' + to_send)
 
     if msg['text'].startswith('/register_lastfm'):
         # Get handle
